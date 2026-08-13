@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import numpy as np
+from cfdsolver import generategrid, to_tensor
+from pruningalg import RigLScheduler
 #The custom pruning alg
 class IPINN(nn.Module):
     def __init__(self):
@@ -27,8 +29,9 @@ class IPINN(nn.Module):
 #    Initial conditions are u(x,0) = - sin(pi*x).  Boundary conditions
 #    are u(-1,t) = u(+1,t) = 0.
 X, T, vu, points = generategrid()
-(initIn, initOut), (boundIn, boundOut), (dataIn,dataOut) = to_tensor(X, T, vu)
-model = IPINN()
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+(initIn, initOut), (boundIn, boundOut), (dataIn,dataOut) = to_tensor(X, T, vu,device=device)
+model = IPINN().to(device)
 nu = torch.nn.parameter.Parameter(torch.tensor(0.8), requires_grad=True)
 optimizer = torch.optim.Adam(list(model.parameters())+[nu], lr=0.005)
 T_end = 200000 # Define T_end as the total number of training steps

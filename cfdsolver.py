@@ -723,17 +723,19 @@ def generategrid():
   points = np.column_stack((X.ravel(), T.ravel(), vu.ravel()))
   return X, T, vu, points
 
-def to_tensor(X, T, vu):
+def to_tensor(X, T, vu,device='cpu'):
 
     def format_pair(x_arr, t_arr, u_arr, requires_grad=False):
         inputs = torch.tensor(
             np.column_stack([x_arr.ravel(), t_arr.ravel()]),
             dtype=torch.float32,
-            requires_grad=requires_grad
+            requires_grad=requires_grad,
+            device=device
         )
         outputs = torch.tensor(
             u_arr.ravel(),
-            dtype=torch.float32
+            dtype=torch.float32,
+            device=device
         ).unsqueeze(1)
         return inputs, outputs
     #inintial

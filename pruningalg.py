@@ -219,7 +219,7 @@ class RigLScheduler:
 
             n = self.N[l]
             s = int(self.S[l] * n)
-            perm = torch.randperm(n)
+            perm = torch.randperm(n,device=w.device)
             perm = perm[:s]
             flat_mask = torch.ones(n, device=w.device)
             flat_mask[perm] = 0

@@ -5,11 +5,10 @@ if __name__=="__main__":
   # one inverse model (trains nu + IPINN) and one forward model (known nu, PINN)
   from modelbase import model, nu, X, T
   from forwardpinn import PINN
-
-  # Generate test inputs from global X and T (assuming they are set by previous cells)
-  test_x = torch.tensor(X.ravel(), dtype=torch.float32).unsqueeze(1)
-  test_t = torch.tensor(T.ravel(), dtype=torch.float32).unsqueeze(1)
   device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+  # Generate test inputs from global X and T (assuming they are set by previous cells)
+  test_x = torch.tensor(X.ravel(), dtype=torch.float32,device=device).unsqueeze(1)
+  test_t = torch.tensor(T.ravel(), dtype=torch.float32,device=device).unsqueeze(1)
   print(f"Using device: {device}")
 
   print("--- Testing Inverse PINN ---")

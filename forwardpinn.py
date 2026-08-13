@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 import numpy as np
-
+from cfdsolver import generategrid, to_tensor
+from pruningalg import RigLScheduler
 class PINN(nn.Module):
     def __init__(self):
         super().__init__()
@@ -28,8 +29,9 @@ class PINN(nn.Module):
 #    are u(-1,t) = u(+1,t) = 0.  The viscosity parameter nu is taken
 #    to be 0.01 / pi, although this is not essential.
 X, T, vu, points = generategrid()
-(initIn, initOut), (boundIn, boundOut), (dataIn,dataOut) = to_tensor(X, T, vu)
-model = PINN()
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+(initIn, initOut), (boundIn, boundOut), (dataIn,dataOut) = to_tensor(X, T, vu,device=device)
+model = PINN().to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.005)
 
 for step in range(200000):
