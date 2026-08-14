@@ -1,26 +1,99 @@
+import os
 import torch
+import torch.nn as nn
+from cfdsolver import generategrid
 
-# Detect if CUDA is available, otherwise use CPU
-if __name__=="__main__":
-  # one inverse model (trains nu + IPINN) and one forward model (known nu, PINN)
-  from modelbase import model, nu, X, T
-  from forwardpinn import PINN
-  device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-  # Generate test inputs from global X and T (assuming they are set by previous cells)
-  test_x = torch.tensor(X.ravel(), dtype=torch.float32,device=device).unsqueeze(1)
-  test_t = torch.tensor(T.ravel(), dtype=torch.float32,device=device).unsqueeze(1)
-  print(f"Using device: {device}")
+class PINN(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(2, 20),
+            nn.Tanh(),
+            nn.Linear(20, 20),
+            nn.Tanh(),
+            nn.Linear(20, 1)
+        )
 
-  print("--- Testing Inverse PINN ---")
-  model.eval()
-  with torch.no_grad():
-    print(f"Discovered nu: {nu.item():.6f}")
-    u_pred_inverse = model(test_x, test_t)
-    print(f"Inverse PINN prediction shape: {u_pred_inverse.shape}")
+    def forward(self, x, t):
+        inputs = torch.cat([x, t], dim=1)
+        return self.net(inputs)
 
-  print("\n--- Testing Forward PINN ---")
-  forward_pinn_test_model = PINN()
-  forward_pinn_test_model.eval()
-  with torch.no_grad():
-    u_pred_forward = forward_pinn_test_model(test_x, test_t)
-    print(f"Forward PINN prediction shape: {u_pred_forward.shape}")
+
+IPINN = PINN  # the inverse models use the exact same architecture
+
+
+def load_checkpoint(path, model, device):
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"Checkpoint not found: {path}. Run the corresponding training script first."
+        )
+    checkpoint = torch.load(path, map_location=device)
+    model.load_state_dict(checkpoint["model_state_dict"])
+    return checkpoint
+
+
+X_RANGE = (-1.0, 1.0)
+T_RANGE = (0.0, 3.0 / torch.pi)
+
+
+def sample_random_points(n_points, device, x_range=X_RANGE, t_range=T_RANGE):
+    x_lo, x_hi = x_range
+    t_lo, t_hi = t_range
+    rand_x = x_lo + (x_hi - x_lo) * torch.rand(n_points, 1, device=device)
+    rand_t = t_lo + (t_hi - t_lo) * torch.rand(n_points, 1, device=device)
+    return rand_x, rand_t
+
+
+def evaluate_model(model, x, t, label):
+    with torch.no_grad():
+        u_pred = model(x, t)
+    print(f"  {label}: shape={tuple(u_pred.shape)}, "
+          f"min={u_pred.min().item():.4f}, max={u_pred.max().item():.4f}, mean={u_pred.mean().item():.4f}")
+    return u_pred
+
+
+if __name__ == "__main__":
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+
+    torch.manual_seed(0)  # remove/change this for different random points each run
+    N_RANDOM_POINTS = 1000
+
+    X, T, vu, points = generategrid()
+    grid_x = torch.tensor(X.ravel(), dtype=torch.float32, device=device).unsqueeze(1)
+    grid_t = torch.tensor(T.ravel(), dtype=torch.float32, device=device).unsqueeze(1)
+    rand_x, rand_t = sample_random_points(N_RANDOM_POINTS, device)
+
+    print("--- Testing Inverse PINN (modelbase) ---")
+    inverse_model = IPINN().to(device)
+    ckpt = load_checkpoint("modelbase_checkpoint.pt", inverse_model, device)
+    nu = ckpt["nu"]
+    inverse_model.eval()
+    print(f"  Discovered nu: {nu.item():.6f}")
+    evaluate_model(inverse_model, grid_x, grid_t, "grid points")
+    evaluate_model(inverse_model, rand_x, rand_t, "random points")
+
+    print("\n--- Testing Forward PINN ---")
+    forward_model = PINN().to(device)
+    load_checkpoint("forward_pinn_checkpoint.pt", forward_model, device)
+    forward_model.eval()
+    evaluate_model(forward_model, grid_x, grid_t, "grid points")
+    evaluate_model(forward_model, rand_x, rand_t, "random points")
+
+    print("\n--- Testing Pruned Inverse PINN (model1) ---")
+    pruned1_model = IPINN().to(device)
+    ckpt1 = load_checkpoint("model1_checkpoint.pt", pruned1_model, device)
+    nu1 = ckpt1["nu"]
+    pruned1_model.eval()
+    print(f"  Discovered nu (model1): {nu1.item():.6f}")
+    evaluate_model(pruned1_model, grid_x, grid_t, "grid points")
+    evaluate_model(pruned1_model, rand_x, rand_t, "random points")
+
+    print("\n--- Testing Pruned Inverse PINN (model2) ---")
+    pruned2_model = IPINN().to(device)
+    ckpt2 = load_checkpoint("model2_checkpoint.pt", pruned2_model, device)
+    nu2 = ckpt2["nu"]
+    pruned2_model.eval()
+    print(f"  Discovered nu (model2): {nu2.item():.6f}")
+    evaluate_model(pruned2_model, grid_x, grid_t, "grid points")
+    evaluate_model(pruned2_model, rand_x, rand_t, "random points")

@@ -34,7 +34,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = PINN().to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.005)
 
-for step in range(200000):
+for step in range(2000000):
     optimizer.zero_grad()
 
     xInit, tInit = initIn[:, 0:1], initIn[:, 1:2]
@@ -65,3 +65,4 @@ for step in range(200000):
     total_loss = loss_ic + loss_bc + loss_pde
     total_loss.backward()
     optimizer.step()
+torch.save({"model_state_dict": model.state_dict()}, "forward_pinn_checkpoint.pt")

@@ -34,7 +34,7 @@ model = IPINN().to(device)
 nu = torch.nn.parameter.Parameter(torch.tensor(0.8), requires_grad=True)
 optimizer = torch.optim.Adam(list(model.parameters())+[nu], lr=0.005)
 
-for step in range(200000):
+for step in range(2000000):
     optimizer.zero_grad()
 
     xInit, tInit = initIn[:, 0:1], initIn[:, 1:2]
@@ -70,3 +70,4 @@ for step in range(200000):
     total_loss.backward()
     #the one with post-order goes here
     optimizer.step()
+torch.save({"model_state_dict": model.state_dict(), "nu": nu.detach()}, "modelbase_checkpoint.pt")

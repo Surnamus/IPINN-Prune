@@ -34,7 +34,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = IPINN().to(device)
 nu = torch.nn.parameter.Parameter(torch.tensor(0.8), requires_grad=True)
 optimizer = torch.optim.Adam(list(model.parameters())+[nu], lr=0.005)
-T_end = 200000 # Define T_end as the total number of training steps
+T_end = 2000000 # Define T_end as the total number of training steps
 pruner = RigLScheduler(model,                           # model you created
                        optimizer,                       # optimizer (recommended = SGD w/ momentum)
                        dense_allocation=0.1,            # a float between 0 and 1 that designates how sparse you want the network to be
@@ -51,7 +51,7 @@ pruner = RigLScheduler(model,                           # model you created
                        state_dict=None)                 # if you have checkpointing enabled for your training script, you should save
                                                           # `pruner.state_dict()` and when resuming pass the loaded `state_dict` into
                                                           # the pruner constructor
-for step in range(200000):
+for step in range(2000000):
     optimizer.zero_grad()
 
     xInit, tInit = initIn[:, 0:1], initIn[:, 1:2]
@@ -88,3 +88,4 @@ for step in range(200000):
     if pruner(loss_ic , loss_bc , loss_pde , loss_data):
       optimizer.step()
     print(pruner)
+torch.save({"model_state_dict": model.state_dict(), "nu": nu.detach(), "pruner_state_dict": pruner.state_dict()}, "model1_checkpoint.pt")
