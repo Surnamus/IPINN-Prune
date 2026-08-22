@@ -717,7 +717,7 @@ def computeexact(vtn=11,vxn=11,nu=0.01 / np.pi,xlo=-1.0,xhi=+1.0,tlo=0.0,thi=3.0
   return vu, nu, vxn, vx, vtn, vt
 
 def generategrid():
-  vu, nu, vxn, vx, vtn, vt = computeexact()
+  vu, nu, vxn, vx, vtn, vt = computeexact(vtn=450,vxn=450)
   vu = vu.T
   T, X = np.meshgrid(vt, vx, indexing='ij')
   points = np.column_stack((X.ravel(), T.ravel(), vu.ravel()))

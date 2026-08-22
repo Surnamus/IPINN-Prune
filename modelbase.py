@@ -7,11 +7,15 @@ class IPINN(nn.Module):
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(2, 20),
-            nn.Tanh(),
-            nn.Linear(20, 20),
-            nn.Tanh(),
-            nn.Linear(20, 1)
+        nn.Linear(2, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 1)
         )
 
     def forward(self, x, t):
@@ -31,10 +35,10 @@ X, T, vu, points = generategrid()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 (initIn, initOut), (boundIn, boundOut), (dataIn,dataOut) = to_tensor(X, T, vu,device=device)
 model = IPINN().to(device)
-nu = torch.nn.parameter.Parameter(torch.tensor(0.8), requires_grad=True)
-optimizer = torch.optim.Adam(list(model.parameters())+[nu], lr=0.005)
+log_nu = torch.nn.parameter.Parameter(torch.tensor(np.log(0.8), device=device), requires_grad=True)
+optimizer = torch.optim.Adam(list(model.parameters())+[log_nu], lr=0.005)
 
-for step in range(2000000):
+for step in range(880000):
     optimizer.zero_grad()
 
     xInit, tInit = initIn[:, 0:1], initIn[:, 1:2]
@@ -58,6 +62,7 @@ for step in range(2000000):
     u_t = torch.autograd.grad(u, t_grad, torch.ones_like(u), create_graph=True)[0]
     u_xx = torch.autograd.grad(u_x, x_grad, torch.ones_like(u), create_graph=True)[0]
     u_f=u
+    nu = torch.nn.functional.softplus(log_nu)
 
     pde_residual = u_t + u_x * u_f - u_xx * nu
     loss_pde = torch.mean(pde_residual ** 2)
@@ -68,6 +73,9 @@ for step in range(2000000):
     loss_data=torch.mean((dataOut-dataPred)**2)
     total_loss = loss_ic + loss_bc + loss_pde + loss_data
     total_loss.backward()
-    #the one with post-order goes here
     optimizer.step()
-torch.save({"model_state_dict": model.state_dict(), "nu": nu.detach()}, "modelbase_checkpoint.pt")
+    if step % 1000 == 0:
+        print(f"step {step}: loss_ic={loss_ic.item():.6f}, loss_bc={loss_bc.item():.6f}, loss_pde={loss_pde.item():.6f}, loss_data={loss_data.item():.6f}, nu={nu.item():.6f}")
+    if step % 40000 == 0:
+        torch.save({"model_state_dict": model.state_dict(), "log_nu": log_nu.detach(), "nu": nu.detach(), "step": step}, f"checkpoints/modelbase_checkpoint_step{step}.pt")
+    torch.save({"model_state_dict": model.state_dict(), "nu": nu.detach()}, "checkpoints/modelbase_checkpoint.pt")

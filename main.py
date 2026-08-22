@@ -7,11 +7,15 @@ class PINN(nn.Module):
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(2, 20),
-            nn.Tanh(),
-            nn.Linear(20, 20),
-            nn.Tanh(),
-            nn.Linear(20, 1)
+        nn.Linear(2, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 1)
         )
 
     def forward(self, x, t):
@@ -66,23 +70,18 @@ if __name__ == "__main__":
 
     print("--- Testing Inverse PINN (modelbase) ---")
     inverse_model = IPINN().to(device)
-    ckpt = load_checkpoint("modelbase_checkpoint.pt", inverse_model, device)
+    ckpt = load_checkpoint("checkpoints/modelbase_checkpoint.pt", inverse_model, device)
     nu = ckpt["nu"]
     inverse_model.eval()
     print(f"  Discovered nu: {nu.item():.6f}")
     evaluate_model(inverse_model, grid_x, grid_t, "grid points")
     evaluate_model(inverse_model, rand_x, rand_t, "random points")
 
-    print("\n--- Testing Forward PINN ---")
-    forward_model = PINN().to(device)
-    load_checkpoint("forward_pinn_checkpoint.pt", forward_model, device)
-    forward_model.eval()
-    evaluate_model(forward_model, grid_x, grid_t, "grid points")
-    evaluate_model(forward_model, rand_x, rand_t, "random points")
+
 
     print("\n--- Testing Pruned Inverse PINN (model1) ---")
     pruned1_model = IPINN().to(device)
-    ckpt1 = load_checkpoint("model1_checkpoint.pt", pruned1_model, device)
+    ckpt1 = load_checkpoint("checkpoints/model1_checkpoint.pt", pruned1_model, device)
     nu1 = ckpt1["nu"]
     pruned1_model.eval()
     print(f"  Discovered nu (model1): {nu1.item():.6f}")
@@ -91,7 +90,7 @@ if __name__ == "__main__":
 
     print("\n--- Testing Pruned Inverse PINN (model2) ---")
     pruned2_model = IPINN().to(device)
-    ckpt2 = load_checkpoint("model2_checkpoint.pt", pruned2_model, device)
+    ckpt2 = load_checkpoint("checkpoints/model2_checkpoint.pt", pruned2_model, device)
     nu2 = ckpt2["nu"]
     pruned2_model.eval()
     print(f"  Discovered nu (model2): {nu2.item():.6f}")

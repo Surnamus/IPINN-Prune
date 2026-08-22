@@ -7,11 +7,15 @@ class IPINN(nn.Module):
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(2, 20),
-            nn.Tanh(),
-            nn.Linear(20, 20),
-            nn.Tanh(),
-            nn.Linear(20, 1)
+        nn.Linear(2, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 1)
         )
 
     def forward(self, x, t):
@@ -31,9 +35,9 @@ X, T, vu, points = generategrid()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 (initIn, initOut), (boundIn, boundOut), (dataIn,dataOut) = to_tensor(X, T, vu,device=device)
 model = IPINN().to(device)
-nu = torch.nn.parameter.Parameter(torch.tensor(0.8), requires_grad=True)
-optimizer = torch.optim.Adam(list(model.parameters())+[nu], lr=0.005)
-T_end = 2000000 # Define T_end as the total number of training steps
+log_nu = torch.nn.parameter.Parameter(torch.tensor(np.log(0.8), device=device), requires_grad=True)
+optimizer = torch.optim.Adam(list(model.parameters())+[log_nu], lr=0.005)
+T_end = 660000 # Define T_end as the total number of training steps
 pruner = RigLScheduler(model,                           # model you created
                        optimizer,                       # optimizer (recommended = SGD w/ momentum)
                        dense_allocation=0.1,            # a float between 0 and 1 that designates how sparse you want the network to be
@@ -50,7 +54,7 @@ pruner = RigLScheduler(model,                           # model you created
                        state_dict=None)                 # if you have checkpointing enabled for your training script, you should save
                                                           # `pruner.state_dict()` and when resuming pass the loaded `state_dict` into
                                                           # the pruner constructor
-for step in range(2000000):
+for step in range(880000):
     optimizer.zero_grad()
 
     xInit, tInit = initIn[:, 0:1], initIn[:, 1:2]
@@ -74,6 +78,7 @@ for step in range(2000000):
     u_t = torch.autograd.grad(u, t_grad, torch.ones_like(u), create_graph=True)[0]
     u_xx = torch.autograd.grad(u_x, x_grad, torch.ones_like(u), create_graph=True)[0]
     u_f=u
+    nu = torch.nn.functional.softplus(log_nu)
 
     pde_residual = u_t + u_x * u_f - u_xx * nu
     loss_pde = torch.mean(pde_residual ** 2)
@@ -83,6 +88,7 @@ for step in range(2000000):
 
     loss_data=torch.mean((dataOut-dataPred)**2)
     params = [p for p in model.parameters() if p.requires_grad]
+
     total_loss = loss_ic + loss_bc + loss_data + loss_pde
     #g1 = torch.autograd.grad(loss_ic, params, retain_graph=True)
     #g2 = torch.autograd.grad(loss_bc, params, retain_graph=True)
@@ -93,6 +99,11 @@ for step in range(2000000):
     #No params means standard total loss
     if pruner():
       optimizer.step()
-    print(pruner)
+    if step % 1000 == 0:
+       print(f"step {step}: loss_ic={loss_ic.item():.6f}, loss_bc={loss_bc.item():.6f}, loss_pde={loss_pde.item():.6f}, loss_data={loss_data.item():.6f}, nu={nu.item():.6f}")
+    if step % 1000 == 0:
+       print(pruner)
+    if step % 40000 == 0:
+       torch.save({"model_state_dict": model.state_dict(), "log_nu": log_nu.detach(), "nu": nu.detach(), "step": step, "pruner_state_dict": pruner.state_dict()}, f"checkpoints/model2_checkpoint_step{step}.pt")
 
-torch.save({"model_state_dict": model.state_dict(), "nu": nu.detach(), "pruner_state_dict": pruner.state_dict()}, "model2_checkpoint.pt")
+torch.save({"model_state_dict": model.state_dict(), "nu": nu.detach(), "pruner_state_dict": pruner.state_dict()}, "checkpoints/model2_checkpoint.pt")

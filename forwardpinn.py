@@ -7,13 +7,16 @@ class PINN(nn.Module):
     def __init__(self):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(2, 20),
-            nn.Tanh(),
-            nn.Linear(20, 20),
-            nn.Tanh(),
-            nn.Linear(20, 1)
+        nn.Linear(2, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 20), nn.Tanh(),
+        nn.Linear(20, 1)
         )
-
     def forward(self, x, t):
         inputs = torch.cat([x, t], dim=1)
         return self.net(inputs)
@@ -34,7 +37,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = PINN().to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.005)
 
-for step in range(2000000):
+for step in range(880000):
     optimizer.zero_grad()
 
     xInit, tInit = initIn[:, 0:1], initIn[:, 1:2]
@@ -65,4 +68,8 @@ for step in range(2000000):
     total_loss = loss_ic + loss_bc + loss_pde
     total_loss.backward()
     optimizer.step()
-torch.save({"model_state_dict": model.state_dict()}, "forward_pinn_checkpoint.pt")
+    if step % 1000 == 0:
+        print(f"step {step}: loss_ic={loss_ic.item():.6f}, loss_bc={loss_bc.item():.6f}, loss_pde={loss_pde.item():.6f}")
+    if step % 50000 == 0:
+        torch.save({"model_state_dict": model.state_dict()}, f"checkpoints/modelforward_checkpoint_step{step}.pt")
+torch.save({"model_state_dict": model.state_dict()}, "checkpoints/forward_pinn_checkpoint.pt")
