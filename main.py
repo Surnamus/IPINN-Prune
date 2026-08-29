@@ -96,3 +96,29 @@ if __name__ == "__main__":
     print(f"  Discovered nu (model2): {nu2.item():.6f}")
     evaluate_model(pruned2_model, grid_x, grid_t, "grid points")
     evaluate_model(pruned2_model, rand_x, rand_t, "random points")
+    print("\n--- Testing LBFGS-refined Inverse PINN (modelbase) ---")
+    lbfgs_base_model = IPINN().to(device)
+    ckpt_lbfgs_base = load_checkpoint("checkpoints/modelbase_lbfgs.pt", lbfgs_base_model, device)
+    nu_lbfgs_base = ckpt_lbfgs_base["nu"]
+    lbfgs_base_model.eval()
+    print(f"  Refined nu (modelbase): {nu_lbfgs_base.item():.6f}")
+    evaluate_model(lbfgs_base_model, grid_x, grid_t, "grid points")
+    evaluate_model(lbfgs_base_model, rand_x, rand_t, "random points")
+
+    print("\n--- Testing LBFGS-refined Pruned Inverse PINN (model1) ---")
+    lbfgs1_model = IPINN().to(device)
+    ckpt_lbfgs1 = load_checkpoint("checkpoints/model1_lbfgs.pt", lbfgs1_model, device)
+    nu_lbfgs1 = ckpt_lbfgs1["nu"]
+    lbfgs1_model.eval()
+    print(f"  Refined nu (model1): {nu_lbfgs1.item():.6f}")
+    evaluate_model(lbfgs1_model, grid_x, grid_t, "grid points")
+    evaluate_model(lbfgs1_model, rand_x, rand_t, "random points")
+
+    print("\n--- Testing LBFGS-refined Pruned Inverse PINN (model2) ---")
+    lbfgs2_model = IPINN().to(device)
+    ckpt_lbfgs2 = load_checkpoint("checkpoints/model2_lbfgs.pt", lbfgs2_model, device)
+    nu_lbfgs2 = ckpt_lbfgs2["nu"]
+    lbfgs2_model.eval()
+    print(f"  Refined nu (model2): {nu_lbfgs2.item():.6f}")
+    evaluate_model(lbfgs2_model, grid_x, grid_t, "grid points")
+    evaluate_model(lbfgs2_model, rand_x, rand_t, "random points")
