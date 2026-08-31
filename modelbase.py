@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from cfdsolver import generategrid, to_tensor
+from cfdsolver import get_static_dataset, sample_lhs_xt
 from scipy.stats import qmc
 class IPINN(nn.Module):
     def __init__(self):
@@ -32,25 +32,26 @@ class IPINN(nn.Module):
 #    Initial conditions are u(x,0) = - sin(pi*x).  Boundary conditions
 #    are u(-1,t) = u(+1,t) = 0.
 
-X, T, vu, points = generategrid()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-(initIn, initOut), (boundIn, boundOut), (dataIn,dataOut) = to_tensor(X, T, vu,device=device)
+_data = get_static_dataset(device=device)
+X, T, vu = _data["X"], _data["T"], _data["vu"]
+initIn, initOut = _data["initIn"], _data["initOut"]
+boundIn, boundOut = _data["boundIn"], _data["boundOut"]
+dataIn, dataOut = _data["dataIn"], _data["dataOut"]
 
 if __name__ == "__main__":
     model = IPINN().to(device)
-    log_nu = torch.nn.parameter.Parameter(torch.tensor(np.log(0.08), device=device), requires_grad=True)
+    log_nu = torch.nn.parameter.Parameter(torch.tensor(np.log(0.008), device=device), requires_grad=True)
     #optimizer = torch.optim.Adam(list(model.parameters())+[log_nu], lr=0.005)
     optimizer = torch.optim.Adam([
     {'params': model.parameters(), 'lr': 0.001},   # Model weights stay stable
-    {'params': [log_nu], 'lr': 0.0085}               # Parameter gets 10x higher learning rate
+    {'params': [log_nu], 'lr': 5e-3}               # was 0.0085
     ], lr=0.005)
-    cosinesch = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=150000, eta_min=1e-5)
+    cosinesch = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=150000, eta_min=1e-4) #maybe 1e-4 or 1e-3 or 2e-4
     obsIn, obsOut = dataIn.clone(), dataOut.clone()
     for step in range(150000):
         if step % 1000 == 0:
-            x_c = torch.empty(10000, 1, device=device).uniform_(-1, 1).requires_grad_(True)
-            t_c = torch.empty(10000, 1, device=device).uniform_(0, 3.0 / torch.pi).requires_grad_(True)  # was (0,1)
-
+            x_c, t_c = sample_lhs_xt(10000, device)
             u_c = model(x_c, t_c)
             ux_c = torch.autograd.grad(u_c, x_c, torch.ones_like(u_c), create_graph=True, retain_graph=True)[0]   # needs create_graph (differentiated again below)
             ut_c = torch.autograd.grad(u_c, t_c, torch.ones_like(u_c),create_graph=True, retain_graph=True)[0]                       # not differentiated again
@@ -84,7 +85,7 @@ if __name__ == "__main__":
 
         u_x = torch.autograd.grad(u, x_grad, torch.ones_like(u), create_graph=True)[0]
         u_t = torch.autograd.grad(u, t_grad, torch.ones_like(u), create_graph=True)[0]
-        u_xx = torch.autograd.grad(u_x, x_grad, torch.ones_like(u), create_graph=True)[0]
+        u_xx = torch.autograd.grad(u_x, x_grad, torch.ones_like(u_x), create_graph=True)[0] #ones like u was here before in all of the scripts, it can be u but whatever
         u_f=u
         nu = torch.nn.functional.softplus(log_nu)
 
@@ -95,8 +96,9 @@ if __name__ == "__main__":
         obsOut_reshaped = obsOut.reshape(-1, 1)
 
         loss_data = torch.mean((obsOut_reshaped - dataPred) ** 2)
-        total_loss = loss_ic + loss_bc + loss_pde + loss_data
+        total_loss = loss_ic + loss_bc + loss_pde + loss_data #data loss scaling
         total_loss.backward()
+        torch.nn.utils.clip_grad_norm_(list(model.parameters()) + [log_nu], max_norm=1.0) #added clipping because apparently the high gradients are too much for lobotomised models, not for this one though
         optimizer.step()
         cosinesch.step()
         if step % 1000 == 0:

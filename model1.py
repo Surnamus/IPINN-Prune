@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
-from cfdsolver import generategrid, to_tensor
+from cfdsolver import get_static_dataset, sample_lhs_xt
 from pruningalg import RigLScheduler
 from scipy.stats import qmc
 #The custom pruning alg
@@ -33,22 +33,24 @@ class IPINN(nn.Module):
 #
 #    Initial conditions are u(x,0) = - sin(pi*x).  Boundary conditions
 #    are u(-1,t) = u(+1,t) = 0.
-X, T, vu, points = generategrid()
 #alpha and beta are in range [-1,1]
 alpha=1
 beta=1
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-(initIn, initOut), (boundIn, boundOut), (dataIn,dataOut) = to_tensor(X, T, vu,device=device)
-
+_data = get_static_dataset(device=device)
+X, T, vu = _data["X"], _data["T"], _data["vu"]
+initIn, initOut = _data["initIn"], _data["initOut"]
+boundIn, boundOut = _data["boundIn"], _data["boundOut"]
+dataIn, dataOut = _data["dataIn"], _data["dataOut"]
 if __name__ == "__main__":
   model = IPINN().to(device)
-  log_nu = torch.nn.parameter.Parameter(torch.tensor(np.log(0.08), device=device), requires_grad=True)
+  log_nu = torch.nn.parameter.Parameter(torch.tensor(np.log(0.008), device=device), requires_grad=True)
   #optimizer = torch.optim.Adam(list(model.parameters())+[log_nu], lr=0.005)
   optimizer = torch.optim.Adam([
     {'params': model.parameters(), 'lr': 0.001},   # Model weights stay stable
-    {'params': [log_nu], 'lr': 0.0085}               # Parameter gets 10x higher learning rate
+    {'params': [log_nu], 'lr': 5e-3}               # Parameter gets 10x higher learning rate
   ], lr=0.005)
-  cosinesch = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=150000, eta_min=1e-5)
+  cosinesch = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=150000, eta_min=1e-4) #maybe 1e-4 or 1e-3
   T_end = 112500 # Define T_end as the total number of training steps
   pruner = RigLScheduler(model,                           # model you created
                         optimizer,                       # optimizer (recommended = SGD w/ momentum)
@@ -67,10 +69,8 @@ if __name__ == "__main__":
                                                             # `pruner.state_dict()` and when resuming pass the loaded `state_dict` into
   obsIn, obsOut = dataIn.clone(), dataOut.clone()                                                          # the pruner constructor
   for step in range(150000):
-      if step % 500 == 0:
-        x_c = torch.empty(10000, 1, device=device).uniform_(-1, 1).requires_grad_(True)
-        t_c = torch.empty(10000, 1, device=device).uniform_(0, 3.0 / torch.pi).requires_grad_(True)  # was (0,1)
-
+      if step % 1000 == 0:
+        x_c, t_c = sample_lhs_xt(10000, device)
         u_c = model(x_c, t_c)
         ux_c = torch.autograd.grad(u_c, x_c, torch.ones_like(u_c), create_graph=True, retain_graph=True)[0]   # needs create_graph (differentiated again below)
         ut_c = torch.autograd.grad(u_c, t_c, torch.ones_like(u_c), create_graph=True, retain_graph=True)[0]                       # not differentiated again
@@ -105,7 +105,7 @@ if __name__ == "__main__":
 
       u_x = torch.autograd.grad(u, x_grad, torch.ones_like(u), create_graph=True)[0]
       u_t = torch.autograd.grad(u, t_grad, torch.ones_like(u), create_graph=True)[0]
-      u_xx = torch.autograd.grad(u_x, x_grad, torch.ones_like(u), create_graph=True)[0]
+      u_xx = torch.autograd.grad(u_x, x_grad, torch.ones_like(u_x), create_graph=True)[0]
       u_f=u
       nu = torch.nn.functional.softplus(log_nu)
 
@@ -119,8 +119,10 @@ if __name__ == "__main__":
       total_loss = loss_ic + loss_bc + loss_pde + loss_data
       total_loss.backward(retain_graph=True)
       if pruner(loss_ic , loss_bc , loss_pde , loss_data,alpha,beta):
+        torch.nn.utils.clip_grad_norm_(list(model.parameters()) + [log_nu], max_norm=1.0) #added clipping because apparently the high gradients are too much for lobotomised models
         optimizer.step()
         cosinesch.step()
+
       if step % 1000 == 0:
         print(f"step {step}: loss_ic={loss_ic.item():.6f}, loss_bc={loss_bc.item():.6f}, loss_pde={loss_pde.item():.6f}, loss_data={loss_data.item():.6f}, nu={nu.item():.6f}")
       if step % 1000 == 0:

@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
-from model1 import initIn, initOut, boundIn, boundOut, dataIn, dataOut, alpha, beta
+from model1 import alpha, beta
+from cfdsolver import get_static_dataset, sample_lhs_xt
+
 class IPINN(nn.Module):
     def __init__(self):
         super().__init__()
@@ -27,23 +29,28 @@ if __name__ == "__main__":
     model.load_state_dict(ckpt["model_state_dict"])
     masks = [(p != 0).clone() for p in model.parameters() if p.dim() == 2]
     log_nu = torch.nn.Parameter(torch.log(torch.expm1(ckpt["nu"])).to(device))
-    obsIn, obsOut = dataIn.clone(), dataOut.clone()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    _data = get_static_dataset(device=device)
+    initIn, initOut = _data["initIn"], _data["initOut"]
+    boundIn, boundOut = _data["boundIn"], _data["boundOut"]
+    obsIn, obsOut = _data["dataIn"], _data["dataOut"]  # .clone() no longer needed — fresh load, nothing to defend against
+    def generate_pool():
+        x_c, t_c = sample_lhs_xt(20000, device)
 
-    x_c = torch.empty(10000, 1, device=device).uniform_(-1, 1).requires_grad_(True)
-    t_c = torch.empty(10000, 1, device=device).uniform_(0, 3.0 / torch.pi).requires_grad_(True)
+        u_c = model(x_c, t_c)
+        ux_c = torch.autograd.grad(u_c, x_c, torch.ones_like(u_c), create_graph=True, retain_graph=True)[0]
+        ut_c = torch.autograd.grad(u_c, t_c, torch.ones_like(u_c), create_graph=True, retain_graph=True)[0]
+        uxx_c = torch.autograd.grad(ux_c, x_c, torch.ones_like(ux_c), create_graph=True, retain_graph=True)[0]
 
-    u_c = model(x_c, t_c)
-    ux_c = torch.autograd.grad(u_c, x_c, torch.ones_like(u_c), create_graph=True, retain_graph=True)[0]
-    ut_c = torch.autograd.grad(u_c, t_c, torch.ones_like(u_c), create_graph=True, retain_graph=True)[0]
-    uxx_c = torch.autograd.grad(ux_c, x_c, torch.ones_like(ux_c), create_graph=True, retain_graph=True)[0]
+        with torch.no_grad():
+            nu_c = torch.nn.functional.softplus(log_nu)
+            res = torch.abs(ut_c + ux_c * u_c - uxx_c * nu_c).squeeze()
+            w = res ** 2                       # k=2: sharpen toward high-residual region
+            w = w / (w.mean() + 1e-12) + 1.0   # uniform floor
+            idx = torch.multinomial(w / w.sum(), 2000, replacement=False)
+            return torch.cat([x_c[idx].detach(), t_c[idx].detach()], dim=1)
 
-    with torch.no_grad():
-        nu_c = torch.nn.functional.softplus(log_nu)
-        res = torch.abs(ut_c + ux_c * u_c - uxx_c * nu_c).squeeze()
-        w = res ** 2                       # k=2: sharpen toward high-residual region
-        w = w / (w.mean() + 1e-12) + 1.0   # uniform floor
-        idx = torch.multinomial(w / w.sum(), 1000, replacement=False)
-        dataIn = torch.cat([x_c[idx].detach(), t_c[idx].detach()], dim=1)
+    dataIn=generate_pool()
 
     lbfgs = torch.optim.LBFGS(
     [*model.parameters(), log_nu],
@@ -67,7 +74,7 @@ if __name__ == "__main__":
         u = model(x, t)
         u_x = torch.autograd.grad(u, x, torch.ones_like(u), create_graph=True)[0]
         u_t = torch.autograd.grad(u, t, torch.ones_like(u), create_graph=True)[0]
-        u_xx = torch.autograd.grad(u_x, x, torch.ones_like(u), create_graph=True)[0]
+        u_xx = torch.autograd.grad(u_x, x, torch.ones_like(u_x), create_graph=True)[0]
 
         nu = torch.nn.functional.softplus(log_nu)
         loss_pde = torch.mean((u_t + u_x * u - u_xx * nu) ** 2)
@@ -84,17 +91,7 @@ if __name__ == "__main__":
                     p.grad *= masks[i]
                     i += 1
         return total_loss
-    prev_loss = float('inf')
-    for epoch in range(1000):
-        loss = lbfgs.step(closure)
-        current_loss = loss.item()
-        print(f"L-BFGS Epoch {epoch}, Loss: {current_loss}")
-
-    # Early stopping if loss stops changing significantly
-        if abs(prev_loss - current_loss) < 1e-8:
-            print("L-BFGS converged.")
-            break
-        prev_loss = current_loss
+    loss = lbfgs.step(closure)
     torch.save({
     "model_state_dict": model.state_dict(),
     "nu": torch.nn.functional.softplus(log_nu).detach()
