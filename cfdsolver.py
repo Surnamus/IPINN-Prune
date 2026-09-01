@@ -667,7 +667,7 @@ def burgers_viscous_time_exact1 ( nu, vxn, vx, vtn, vt ):
   import numpy as np
   #from hermite_ek_compute import hermite_ek_compute
   #import hermite_ek_compute
-  qn = 8
+  qn = 128
 #
 #  Compute the rule.
 #
@@ -717,7 +717,7 @@ def computeexact(vtn=11,vxn=11,nu=0.01 / np.pi,xlo=-1.0,xhi=+1.0,tlo=0.0,thi=3.0
   return vu, nu, vxn, vx, vtn, vt
 
 def generategrid():
-  vu, nu, vxn, vx, vtn, vt = computeexact(vtn=450,vxn=450)
+  vu, nu, vxn, vx, vtn, vt = computeexact(vtn=107,vxn=1885)
   vu = vu.T
   T, X = np.meshgrid(vt, vx, indexing='ij')
   points = np.column_stack((X.ravel(), T.ravel(), vu.ravel()))
@@ -756,3 +756,83 @@ def to_tensor(X, T, vu,device='cpu'):
     )
 
     return (ic_in, ic_out), (bc_in, bc_out), (int_in, int_out)
+
+from scipy.stats import qmc
+
+X_RANGE = (-1.0, 1.0)
+T_RANGE = (0.0, 3.0 / np.pi)
+
+#def sample_lhs_xt(n, device, x_range=X_RANGE, t_range=T_RANGE):
+#    u = qmc.LatinHypercube(d=2).random(n)  # no fixed seed -> a fresh design every call
+#    scaled = qmc.scale(u, [x_range[0], t_range[0]], [x_range[1], t_range[1]])
+#    x_c = torch.tensor(scaled[:, 0:1], dtype=torch.float32, device=device).requires_grad_(True)
+#    t_c = torch.tensor(scaled[:, 1:2], dtype=torch.float32, device=device).requires_grad_(True)
+#    return x_c, t_c
+def sample_lhs_xt(n, device, x_range=X_RANGE, t_range=T_RANGE):
+    shock_ratio = 0.7
+    shock_half_width = 0.25
+    x_lo, x_hi = x_range
+    t_lo, t_hi = t_range
+
+    n_shock = int(n * shock_ratio)
+    n_outer = n - n_shock
+
+    shock_lo = max(x_lo, -shock_half_width)
+    shock_hi = min(x_hi, shock_half_width)
+
+    # 1. High-density shock layer sampling: x in [shock_lo, shock_hi]
+    u_shock = qmc.LatinHypercube(d=2).random(n_shock) if n_shock > 0 else np.empty((0, 2))
+    scaled_shock = qmc.scale(u_shock, [shock_lo, t_lo], [shock_hi, t_hi]) if n_shock > 0 else np.empty((0, 2))
+
+    # 2. Outer domain sampling: draw the left wing [x_lo, shock_lo] and the
+    #    right wing [shock_hi, x_hi] separately, each getting a share of
+    #    n_outer proportional to its width, so density is uniform across
+    #    the outer region instead of being lumped near the shock edges.
+    left_width = max(shock_lo - x_lo, 0.0)
+    right_width = max(x_hi - shock_hi, 0.0)
+    total_width = left_width + right_width
+
+    pieces = []
+    if n_outer > 0 and total_width > 0:
+        n_left = int(round(n_outer * left_width / total_width))
+        n_right = n_outer - n_left
+        if n_left > 0:
+            u_left = qmc.LatinHypercube(d=2).random(n_left)
+            pieces.append(qmc.scale(u_left, [x_lo, t_lo], [shock_lo, t_hi]))
+        if n_right > 0:
+            u_right = qmc.LatinHypercube(d=2).random(n_right)
+            pieces.append(qmc.scale(u_right, [shock_hi, t_lo], [x_hi, t_hi]))
+    scaled_outer = np.vstack(pieces) if pieces else np.empty((0, 2))
+
+    # Combine both datasets
+    scaled_all = np.vstack([scaled_shock, scaled_outer])
+    x_c = torch.tensor(scaled_all[:, 0:1], dtype=torch.float32, device=device).requires_grad_(True)
+    t_c = torch.tensor(scaled_all[:, 1:2], dtype=torch.float32, device=device).requires_grad_(True)
+    return x_c, t_c
+
+
+import os
+
+DEFAULT_DATASET_PATH = "datasets/static_dataset.pt"
+
+def build_dataset(device='cpu'):
+    X, T, vu, points = generategrid()
+    (initIn, initOut), (boundIn, boundOut), (dataIn, dataOut) = to_tensor(X, T, vu, device=device)
+    return {
+        "X": X, "T": T, "vu": vu,
+        "initIn": initIn, "initOut": initOut,
+        "boundIn": boundIn, "boundOut": boundOut,
+        "dataIn": dataIn, "dataOut": dataOut,
+    }
+
+def get_static_dataset(path=DEFAULT_DATASET_PATH, device='cpu', force_regenerate=False):
+    if (not force_regenerate) and os.path.exists(path):
+        cached = torch.load(path, map_location=device, weights_only=False)
+        return {k: (v.to(device) if torch.is_tensor(v) else v) for k, v in cached.items()}
+    data = build_dataset(device='cpu')
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    torch.save(data, path)
+    return {k: (v.to(device) if torch.is_tensor(v) else v) for k, v in data.items()}
+if __name__ == "__main__":
+    get_static_dataset(device='cpu')
+    print("Static dataset ready.")
