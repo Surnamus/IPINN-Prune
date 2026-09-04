@@ -84,4 +84,5 @@ if __name__ == "__main__":
     torch.save({
     "model_state_dict": model.state_dict(),
     "nu": torch.exp(raw_nu).detach(),
+    "raw_nu": raw_nu.detach(),
     }, "checkpoints/modelbase_lbfgs.pt")

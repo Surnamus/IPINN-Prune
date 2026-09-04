@@ -43,7 +43,7 @@ if __name__ == "__main__":
     model = IPINN().to(device)
     raw_nu = torch.nn.Parameter(torch.tensor(np.log(0.008), dtype=torch.float32, device=device), requires_grad=True)
     torch.manual_seed(42)
-  #optimizer = torch.optim.Adam(list(model.parameters())+[log_nu], lr=0.005)
+  #optimizer = torch.optim.Adam(list(model.parameters())+[raw_nu], lr=0.005)
     optimizer = torch.optim.Adam([
     {'params': model.parameters(), 'lr': 0.001},   # Model weights stay stable
     {'params': [raw_nu], 'lr': 1e-3}               # was 0.0085

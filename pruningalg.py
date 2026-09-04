@@ -357,8 +357,9 @@ class RigLScheduler:
                 for l, w in enumerate(self.W):
                     if self.backward_hook_objects[l] is not None:
                     # Use same fallback gradient for both drop and grow
-                      self.backward_hook_objects[l].dense_grad_drop = w.grad
-                      self.backward_hook_objects[l].dense_grad_grow = w.grad
+                      self.backward_hook_objects[l].dense_grad_drop = self.backward_hook_objects[l].dense_grad #w.grad
+                      self.backward_hook_objects[l].dense_grad_grow = self.backward_hook_objects[l].dense_grad #w.grad
+                      #added because it is possible that this is the exact cause for 0 loss, apart from clipless
 
         self._rigl_step()
         self.rigl_steps += 1

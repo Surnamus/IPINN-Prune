@@ -1,6 +1,8 @@
+import argparse
 import torch
 import torch.nn as nn
-from model1 import initIn, initOut, boundIn, boundOut, dataIn, dataOut, alpha, beta
+from cfdsolver import get_static_dataset, sample_lhs_xt
+
 class IPINN(nn.Module):
     def __init__(self):
         super().__init__()
@@ -21,34 +23,38 @@ class IPINN(nn.Module):
         return self.net(inputs)
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--sparsity", type=float, required=True,
+                         help="Sparsity of the model1 checkpoint to refine")
+    parser.add_argument("--angle", type=float, required=True,
+                         help="Angle (degrees) of the model1 checkpoint to refine")
+    args = parser.parse_args()
+    sparsity = args.sparsity
+    angle = args.angle
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = IPINN().to(device)
-    ckpt = torch.load("checkpoints/model1_checkpoint.pt", map_location=device)
+    ckpt = torch.load(f"checkpoints/model1_checkpoint_sparsity{sparsity}_angle{angle}.pt", map_location=device)
     model.load_state_dict(ckpt["model_state_dict"])
+    alpha = ckpt["alpha"]
+    beta = ckpt["beta"]
     masks = [(p != 0).clone() for p in model.parameters() if p.dim() == 2]
-    log_nu = torch.nn.Parameter(torch.log(torch.expm1(ckpt["nu"])).to(device))
-    obsIn, obsOut = dataIn.clone(), dataOut.clone()
+    raw_nu = torch.nn.Parameter(ckpt["raw_nu"].to(device))
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    _data = get_static_dataset(device=device)
+    initIn, initOut = _data["initIn"], _data["initOut"]
+    boundIn, boundOut = _data["boundIn"], _data["boundOut"]
+    obsIn, obsOut = _data["dataIn"], _data["dataOut"]
 
-    x_c = torch.empty(10000, 1, device=device).uniform_(-1, 1).requires_grad_(True)
-    t_c = torch.empty(10000, 1, device=device).uniform_(0, 3.0 / torch.pi).requires_grad_(True)
-
-    u_c = model(x_c, t_c)
-    ux_c = torch.autograd.grad(u_c, x_c, torch.ones_like(u_c), create_graph=True, retain_graph=True)[0]
-    ut_c = torch.autograd.grad(u_c, t_c, torch.ones_like(u_c), create_graph=True, retain_graph=True)[0]
-    uxx_c = torch.autograd.grad(ux_c, x_c, torch.ones_like(ux_c), create_graph=True, retain_graph=True)[0]
-
-    with torch.no_grad():
-        nu_c = torch.nn.functional.softplus(log_nu)
-        res = torch.abs(ut_c + ux_c * u_c - uxx_c * nu_c).squeeze()
-        w = res ** 2                       # k=2: sharpen toward high-residual region
-        w = w / (w.mean() + 1e-12) + 1.0   # uniform floor
-        idx = torch.multinomial(w / w.sum(), 1000, replacement=False)
-        dataIn = torch.cat([x_c[idx].detach(), t_c[idx].detach()], dim=1)
-
+    torch.manual_seed(42) # Keep it static so L-BFGS doesn't get confused by changing loss landscapes
+    idx_lbfgs = torch.randperm(obsIn.shape[0])[:5000]
+    obsIn = obsIn[idx_lbfgs]
+    obsOut = obsOut[idx_lbfgs]
+    #new
     lbfgs = torch.optim.LBFGS(
-    [*model.parameters(), log_nu],
+    [*model.parameters(), raw_nu],
     lr=1.0,
-    max_iter=500,
+    max_iter=5000,
     history_size=50,
     line_search_fn="strong_wolfe"
     )
@@ -62,21 +68,23 @@ if __name__ == "__main__":
         boundPred = model(boundIn[:, 0:1], boundIn[:, 1:2])
         loss_bc = torch.mean((boundPred - boundOut) ** 2)
 
-        x = dataIn[:, 0:1].clone().detach().requires_grad_(True)
-        t = dataIn[:, 1:2].clone().detach().requires_grad_(True)
+        x = obsIn[:, 0:1].clone().detach().requires_grad_(True)
+        t = obsIn[:, 1:2].clone().detach().requires_grad_(True)
         u = model(x, t)
+
         u_x = torch.autograd.grad(u, x, torch.ones_like(u), create_graph=True)[0]
         u_t = torch.autograd.grad(u, t, torch.ones_like(u), create_graph=True)[0]
-        u_xx = torch.autograd.grad(u_x, x, torch.ones_like(u), create_graph=True)[0]
+        u_xx = torch.autograd.grad(u_x, x, torch.ones_like(u_x), create_graph=True)[0]
 
-        nu = torch.nn.functional.softplus(log_nu)
-        loss_pde = torch.mean((u_t + u_x * u - u_xx * nu) ** 2)
+        nu = torch.exp(raw_nu)
+        loss_pde = torch.mean((u_t + u * u_x - u_xx * nu) ** 2)
 
-        dataPred = model(obsIn[:, 0:1], obsIn[:, 1:2])
-        loss_data = torch.mean((obsOut.reshape(-1, 1) - dataPred) ** 2)
-
-        total_loss = alpha*(loss_ic + loss_bc + loss_pde) + beta*loss_data
+# Reuse 'u' for Data Loss:
+        loss_data = torch.mean((obsOut.reshape(-1, 1) - u) ** 2)
+        total_loss = loss_ic + loss_bc + loss_pde + loss_data
+        print(f"L-BFGS Loss: {total_loss.item():.6f} | Nu: {nu.item():.6f}")
         total_loss.backward()
+
         with torch.no_grad():
             i = 0
             for p in model.parameters():
@@ -84,18 +92,13 @@ if __name__ == "__main__":
                     p.grad *= masks[i]
                     i += 1
         return total_loss
-    prev_loss = float('inf')
-    for epoch in range(1000):
-        loss = lbfgs.step(closure)
-        current_loss = loss.item()
-        print(f"L-BFGS Epoch {epoch}, Loss: {current_loss}")
-
-    # Early stopping if loss stops changing significantly
-        if abs(prev_loss - current_loss) < 1e-8:
-            print("L-BFGS converged.")
-            break
-        prev_loss = current_loss
+    loss = lbfgs.step(closure)
     torch.save({
     "model_state_dict": model.state_dict(),
-    "nu": torch.nn.functional.softplus(log_nu).detach()
-}, "checkpoints/model1_lbfgs.pt")
+    "nu": torch.exp(raw_nu).detach(),
+    "raw_nu": raw_nu.detach(),
+    "sparsity": sparsity,
+    "alpha": alpha,
+    "beta": beta,
+    "angle": angle
+}, f"checkpoints/model1_lbfgs_sparsity{sparsity}_angle{angle}.pt")
