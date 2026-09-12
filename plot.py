@@ -154,56 +154,90 @@ def savefig(fig: plt.Figure, out_path: Path, dpi: int, show: bool) -> None:
     plt.close(fig)
 
 
-def plot_model2(df: pd.DataFrame, metric: str, out_dir: Path, stage: str, dpi: int, show: bool) -> None:
+def plot_model2(
+    df: pd.DataFrame,
+    metric: str,
+    out_dir: Path,
+    stage: str,
+    dpi: int,
+    show: bool,
+) -> None:
     col = error_col(metric)
     label = metric_label(metric)
 
-    fig, ax = plt.subplots(figsize=(7.5, 5.3))
-
+    # When --stage both is used, create one completely separate
+    # figure for Adam/train and one completely separate figure for LBFGS.
     if stage == "both":
-        # Compare train vs LBFGS directly at each sparsity.
-        for stage_name, sub in sorted(df.groupby("Stage"), key=lambda kv: str(kv[0])):
-            grouped = (
-                sub.groupby("Sparsity", as_index=False)[col]
-                .mean()
-                .sort_values("Sparsity")
-            )
-            ax.plot(
-                grouped["Sparsity"],
-                grouped[col],
-                marker="o",
-                linewidth=1.8,
-                markersize=5,
-                label=str(stage_name),
-            )
+        stage_names = [
+            str(s)
+            for s in sorted(df["Stage"].dropna().unique())
+        ]
     else:
-        # There should be one point per sparsity for model2.
+        stage_names = [stage]
+
+    for stage_name in stage_names:
+        sub = df[
+            df["Stage"].astype(str).str.lower() == stage_name.lower()
+        ].copy()
+
+        if sub.empty:
+            print(f"[skip] model2 {label}: no data for stage={stage_name}")
+            continue
+
+        # One value per sparsity level.
+        # Mean is only relevant if the CSV happens to contain duplicate
+        # rows for the same sparsity.
         grouped = (
-            df.groupby("Sparsity", as_index=False)[col]
+            sub.groupby("Sparsity", as_index=False)[col]
             .mean()
             .sort_values("Sparsity")
         )
+
+        fig, ax = plt.subplots(figsize=(7.5, 5.3))
+
         ax.plot(
             grouped["Sparsity"],
             grouped[col],
             marker="o",
             linewidth=1.8,
             markersize=5,
-            label=stage.upper(),
         )
 
-    ax.set_xlabel("Sparsity")
-    ax.set_ylabel(label)
-    ax.set_yscale("log")
-    ax.set_title(f"model2: {label} vs Sparsity")
-    ax.set_xticks(sorted(df["Sparsity"].unique()))
-    ax.grid(True, alpha=0.25)
-    ax.legend()
-    fig.tight_layout()
+        ax.set_xlabel("Sparsity")
+        ax.set_ylabel(label)
+        ax.set_yscale("log")
 
-    filename = f"model2_sparsity_vs_{safe_name(label)}_{stage}.png"
-    savefig(fig, out_dir / filename, dpi, show)
+        stage_label = (
+            "Adam"
+            if stage_name.lower() == "train"
+            else "LBFGS"
+            if stage_name.lower() == "lbfgs"
+            else stage_name
+        )
 
+        ax.set_title(
+            f"model2: {label} vs Sparsity\n{stage_label}"
+        )
+
+        ax.set_xticks(
+            sorted(sub["Sparsity"].unique())
+        )
+
+        ax.grid(True, alpha=0.25)
+
+        fig.tight_layout()
+
+        filename = (
+            f"model2_sparsity_vs_{safe_name(label)}_"
+            f"{stage_name.lower()}.png"
+        )
+
+        savefig(
+            fig,
+            out_dir / filename,
+            dpi,
+            show,
+        )
 
 def _regularize_angle_grid(pivot: pd.DataFrame) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
@@ -243,6 +277,11 @@ def plot_model1_contour(
     else:
         stage_names = [stage]
 
+    # Build every stage's pivot first so all of them can share one color
+    # scale for this metric -- if each stage's LogNorm were fit to only its
+    # own data (the previous behaviour), the same error value could land on
+    # a different color in the Adam plot than in the LBFGS plot.
+    pivots: dict[str, pd.DataFrame] = {}
     for stage_name in stage_names:
         sub = df[df["Stage"].astype(str).str.lower() == stage_name.lower()].copy()
 
@@ -257,19 +296,30 @@ def plot_model1_contour(
             print(f"[skip] model1 {label}: no data for stage={stage_name}")
             continue
 
+        pivots[stage_name] = pivot
+
+    if not pivots:
+        return
+
+    all_vals = np.concatenate([p.to_numpy(float).ravel() for p in pivots.values()])
+    all_vals = all_vals[np.isfinite(all_vals)]
+
+    if all_vals.size == 0:
+        raise ValueError(f"Non-finite {label} values in model1 data.")
+
+    zmin = float(np.nanmin(all_vals))
+    zmax = float(np.nanmax(all_vals))
+
+    zmin = max(zmin, 1e-7)
+    if zmax <= zmin:
+        zmax = zmin * 10.0
+
+    for stage_name, pivot in pivots.items():
         fig, ax = plt.subplots(figsize=(11.0, 5.5))  # Wider canvas
 
-        zmin = float(np.nanmin(pivot.values))
-        zmax = float(np.nanmax(pivot.values))
-
-        if not np.isfinite(zmin) or not np.isfinite(zmax):
-            raise ValueError(f"Non-finite {label} values in model1 data.")
-
-        zmin = max(zmin, 1e-7)
-        if zmax <= zmin:
-            zmax = zmin * 10.0
-
-        # Equal-width discrete matrix display
+        # Shared vmin/vmax (computed above, across every stage plotted for
+        # this metric) -- a fresh LogNorm per plot since Normalize objects
+        # shouldn't be reused across multiple imshow/colorbar calls.
         im = ax.imshow(
             pivot.values,
             norm=LogNorm(vmin=zmin, vmax=zmax),

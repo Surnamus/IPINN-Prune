@@ -5,6 +5,7 @@ import numpy as np
 from cfdsolver import get_static_dataset, sample_lhs_xt
 from pruningalg import RigLScheduler
 from scipy.stats import qmc
+import random
 class IPINN(nn.Module):
     def __init__(self):
         super().__init__()
@@ -33,6 +34,11 @@ class IPINN(nn.Module):
 #
 #    Initial conditions are u(x,0) = - sin(pi*x).  Boundary conditions
 #    are u(-1,t) = u(+1,t) = 0.
+def set_seed(seed=2026):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 _data = get_static_dataset(device=device)
 X, T, vu = _data["X"], _data["T"], _data["vu"]
@@ -40,6 +46,7 @@ initIn, initOut = _data["initIn"], _data["initOut"]
 boundIn, boundOut = _data["boundIn"], _data["boundOut"]
 dataIn, dataOut = _data["dataIn"], _data["dataOut"]
 if __name__ == "__main__":
+  set_seed(2026)
   parser = argparse.ArgumentParser()
   parser.add_argument("--sparsity", type=float, required=True,
                        help="Target sparsity in (0,1); dense_allocation = 1 - sparsity")
@@ -49,7 +56,6 @@ if __name__ == "__main__":
 
   model = IPINN().to(device)
   raw_nu = torch.nn.Parameter(torch.tensor(np.log(0.008), dtype=torch.float32, device=device), requires_grad=True)
-  torch.manual_seed(42)
   #optimizer = torch.optim.Adam(list(model.parameters())+[raw_nu], lr=0.005)
   optimizer = torch.optim.Adam([
     {'params': model.parameters(), 'lr': 0.001},   # Model weights stay stable

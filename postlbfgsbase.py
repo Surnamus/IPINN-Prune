@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 from cfdsolver import get_static_dataset, sample_lhs_xt
+import random
+import numpy as np
 class IPINN(nn.Module):
     def __init__(self):
         super().__init__()
@@ -19,8 +21,12 @@ class IPINN(nn.Module):
     def forward(self, x, t):
         inputs = torch.cat([x, t], dim=1)
         return self.net(inputs)
+def set_seed(seed=2026):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
 if __name__ == "__main__":
-
+    set_seed(2026)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = IPINN().to(device)
     ckpt = torch.load("checkpoints/modelbase_checkpoint.pt", map_location=device)
@@ -39,7 +45,6 @@ if __name__ == "__main__":
 
 
     #new
-    torch.manual_seed(42) # Keep it static so L-BFGS doesn't get confused by changing loss landscapes
     idx_lbfgs = torch.randperm(obsIn.shape[0])[:5000]
     obsIn = obsIn[idx_lbfgs]
     obsOut = obsOut[idx_lbfgs]

@@ -3,6 +3,7 @@ import torch.nn as nn
 import numpy as np
 from cfdsolver import get_static_dataset, sample_lhs_xt
 from scipy.stats import qmc
+import random
 class IPINN(nn.Module):
     def __init__(self):
         super().__init__()
@@ -38,11 +39,15 @@ X, T, vu = _data["X"], _data["T"], _data["vu"]
 initIn, initOut = _data["initIn"], _data["initOut"]
 boundIn, boundOut = _data["boundIn"], _data["boundOut"]
 dataIn, dataOut = _data["dataIn"], _data["dataOut"]
-
+def set_seed(seed=2026):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
 if __name__ == "__main__":
+    set_seed(2026)
     model = IPINN().to(device)
     raw_nu = torch.nn.Parameter(torch.tensor(np.log(0.008), dtype=torch.float32, device=device), requires_grad=True)
-    torch.manual_seed(42)
+
   #optimizer = torch.optim.Adam(list(model.parameters())+[raw_nu], lr=0.005)
     optimizer = torch.optim.Adam([
     {'params': model.parameters(), 'lr': 0.001},   # Model weights stay stable

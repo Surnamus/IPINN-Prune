@@ -2,7 +2,8 @@ import argparse
 import torch
 import torch.nn as nn
 from cfdsolver import get_static_dataset, sample_lhs_xt
-
+import random
+import numpy as np
 class IPINN(nn.Module):
     def __init__(self):
         super().__init__()
@@ -22,7 +23,13 @@ class IPINN(nn.Module):
         inputs = torch.cat([x, t], dim=1)
         return self.net(inputs)
 
+def set_seed(seed=2026):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+
 if __name__ == "__main__":
+    set_seed(2026)
     parser = argparse.ArgumentParser()
     parser.add_argument("--sparsity", type=float, required=True,
                          help="Sparsity of the model1 checkpoint to refine")
@@ -46,7 +53,6 @@ if __name__ == "__main__":
     boundIn, boundOut = _data["boundIn"], _data["boundOut"]
     obsIn, obsOut = _data["dataIn"], _data["dataOut"]
 
-    torch.manual_seed(42) # Keep it static so L-BFGS doesn't get confused by changing loss landscapes
     idx_lbfgs = torch.randperm(obsIn.shape[0])[:5000]
     obsIn = obsIn[idx_lbfgs]
     obsOut = obsOut[idx_lbfgs]
