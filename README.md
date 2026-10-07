@@ -7,7 +7,7 @@ Fajlovi u ovom direktorijumu sada obuhvataju trening, CSV, grafikone, statistiku
 - pruningalg.py: OG struktura sa dokumentovanim izmenama.
 - train_dst.py: zajednički Adam+LBFGS trening; doslovna OG IPINN klasa.
 - cfdsolver.py: originalni solver i učitavanje dataset-a.
-- experiment_config.py: trenutni puni dizajn, seed-ovi 2022–2033, uglovi 0/45/90/135, proređenosti 0.1–0.9 i 0.95.
+- experiment_config.py: trenutni puni dizajn, seed-ovi 2022–2033, uglovi 0/45/90/135, proređenosti 0.1–0.9.
 - run_experiments.py: sweep, dva radnika uz --workers 2; prvo Model1, zatim Model2, random i dense.
 - main.py: evaluacija i CSV.
 - plot.py: grafikoni iz CSV-a.
@@ -66,4 +66,4 @@ Odsečena veza može ponovo da poraste pri sledećem ili kasnijem ažuriranju, a
 
 ## Sadržaj arhive
 
-Ova arhiva sadrži novi pipeline i uputstva. Ne sadrži dataset niti originalne model1/model2 skripte: zadrži ih iz postojećeg repo-a. main.py i ostali fajlovi koji već postoje pod istim imenom zamenjuju se radnim verzijama samo u novoj grani. README objašnjava koji ulazi reprodukuju sadašnji protokol. Prilagodi --dataset stvarnoj putanji dataset-a u repo-u.
+Ova arhiva sadrži novi pipeline i uputstva. Sadrzi originalne model1 i model2 skripte, ali se efektivno ne korsite,kao i main.py i ostali fajlovi koji već postoje pod istim imenom zamenjuju se radnim verzijama samo u novoj grani. README objašnjava koji ulazi reprodukuju sadašnji protokol. Prilagodi --dataset stvarnoj putanji dataset-a u repo-u.
