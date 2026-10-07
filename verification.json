@@ -1,0 +1,217 @@
+{
+  "device": "cpu",
+  "cases": 24,
+  "scope": "Short CPU optimizer and actual-dataset PDE comparisons; not full-budget or ROCm validation",
+  "cases_detail": [
+    {
+      "seed": 2022,
+      "arm": "th0",
+      "sparsity": 0.1,
+      "adam_steps": 16,
+      "lbfgs_max_iter": 20,
+      "exact_weights_masks_adam_state": true
+    },
+    {
+      "seed": 2022,
+      "arm": "th0",
+      "sparsity": 0.8,
+      "adam_steps": 16,
+      "lbfgs_max_iter": 20,
+      "exact_weights_masks_adam_state": true
+    },
+    {
+      "seed": 2022,
+      "arm": "th45",
+      "sparsity": 0.1,
+      "adam_steps": 16,
+      "lbfgs_max_iter": 20,
+      "exact_weights_masks_adam_state": true
+    },
+    {
+      "seed": 2022,
+      "arm": "th45",
+      "sparsity": 0.8,
+      "adam_steps": 16,
+      "lbfgs_max_iter": 20,
+      "exact_weights_masks_adam_state": true
+    },
+    {
+      "seed": 2022,
+      "arm": "th90",
+      "sparsity": 0.1,
+      "adam_steps": 16,
+      "lbfgs_max_iter": 20,
+      "exact_weights_masks_adam_state": true
+    },
+    {
+      "seed": 2022,
+      "arm": "th90",
+      "sparsity": 0.8,
+      "adam_steps": 16,
+      "lbfgs_max_iter": 20,
+      "exact_weights_masks_adam_state": true
+    },
+    {
+      "seed": 2022,
+      "arm": "th135",
+      "sparsity": 0.1,
+      "adam_steps": 16,
+      "lbfgs_max_iter": 20,
+      "exact_weights_masks_adam_state": true
+    },
+    {
+      "seed": 2022,
+      "arm": "th135",
+      "sparsity": 0.8,
+      "adam_steps": 16,
+      "lbfgs_max_iter": 20,
+      "exact_weights_masks_adam_state": true
+    },
+    {
+      "seed": 2022,
+      "arm": "m2",
+      "sparsity": 0.1,
+      "adam_steps": 16,
+      "lbfgs_max_iter": 20,
+      "exact_weights_masks_adam_state": true
+    },
+    {
+      "seed": 2022,
+      "arm": "m2",
+      "sparsity": 0.8,
+      "adam_steps": 16,
+      "lbfgs_max_iter": 20,
+      "exact_weights_masks_adam_state": true
+    },
+    {
+      "seed": 2022,
+      "arm": "random",
+      "sparsity": 0.1,
+      "adam_steps": 16,
+      "lbfgs_max_iter": 20,
+      "exact_weights_masks_adam_state": true
+    },
+    {
+      "seed": 2022,
+      "arm": "random",
+      "sparsity": 0.8,
+      "adam_steps": 16,
+      "lbfgs_max_iter": 20,
+      "exact_weights_masks_adam_state": true
+    },
+    {
+      "seed": 2023,
+      "arm": "th0",
+      "sparsity": 0.1,
+      "adam_steps": 16,
+      "lbfgs_max_iter": 20,
+      "exact_weights_masks_adam_state": true
+    },
+    {
+      "seed": 2023,
+      "arm": "th0",
+      "sparsity": 0.8,
+      "adam_steps": 16,
+      "lbfgs_max_iter": 20,
+      "exact_weights_masks_adam_state": true
+    },
+    {
+      "seed": 2023,
+      "arm": "th45",
+      "sparsity": 0.1,
+      "adam_steps": 16,
+      "lbfgs_max_iter": 20,
+      "exact_weights_masks_adam_state": true
+    },
+    {
+      "seed": 2023,
+      "arm": "th45",
+      "sparsity": 0.8,
+      "adam_steps": 16,
+      "lbfgs_max_iter": 20,
+      "exact_weights_masks_adam_state": true
+    },
+    {
+      "seed": 2023,
+      "arm": "th90",
+      "sparsity": 0.1,
+      "adam_steps": 16,
+      "lbfgs_max_iter": 20,
+      "exact_weights_masks_adam_state": true
+    },
+    {
+      "seed": 2023,
+      "arm": "th90",
+      "sparsity": 0.8,
+      "adam_steps": 16,
+      "lbfgs_max_iter": 20,
+      "exact_weights_masks_adam_state": true
+    },
+    {
+      "seed": 2023,
+      "arm": "th135",
+      "sparsity": 0.1,
+      "adam_steps": 16,
+      "lbfgs_max_iter": 20,
+      "exact_weights_masks_adam_state": true
+    },
+    {
+      "seed": 2023,
+      "arm": "th135",
+      "sparsity": 0.8,
+      "adam_steps": 16,
+      "lbfgs_max_iter": 20,
+      "exact_weights_masks_adam_state": true
+    },
+    {
+      "seed": 2023,
+      "arm": "m2",
+      "sparsity": 0.1,
+      "adam_steps": 16,
+      "lbfgs_max_iter": 20,
+      "exact_weights_masks_adam_state": true
+    },
+    {
+      "seed": 2023,
+      "arm": "m2",
+      "sparsity": 0.8,
+      "adam_steps": 16,
+      "lbfgs_max_iter": 20,
+      "exact_weights_masks_adam_state": true
+    },
+    {
+      "seed": 2023,
+      "arm": "random",
+      "sparsity": 0.1,
+      "adam_steps": 16,
+      "lbfgs_max_iter": 20,
+      "exact_weights_masks_adam_state": true
+    },
+    {
+      "seed": 2023,
+      "arm": "random",
+      "sparsity": 0.8,
+      "adam_steps": 16,
+      "lbfgs_max_iter": 20,
+      "exact_weights_masks_adam_state": true
+    }
+  ],
+  "dataset_checks": [
+    {
+      "arm": "th45",
+      "seed": 2022,
+      "sparsity": 0.8,
+      "adam_steps": 6,
+      "lbfgs_max_iter": 4,
+      "exact_weights_nu_losses": true
+    },
+    {
+      "arm": "m2",
+      "seed": 2022,
+      "sparsity": 0.8,
+      "adam_steps": 6,
+      "lbfgs_max_iter": 4,
+      "exact_weights_nu_losses": true
+    }
+  ]
+}

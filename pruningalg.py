@@ -64,6 +64,7 @@ def get_W(model, return_linear_layers_mask=False):
 
 """ implementation of https://arxiv.org/abs/1911.11134 """
 #directly from https://github.com/verbiiz/rigl-torch/blob/master/rigl_torch/RigL.py#L245
+import math
 import numpy as np
 import torch
 import torchvision
@@ -104,7 +105,7 @@ def _create_step_wrapper(scheduler, optimizer):
 
 class RigLScheduler:
 
-    def __init__(self, model, optimizer, dense_allocation=1, T_end=None, sparsity_distribution='uniform', ignore_linear_layers=True, delta=100, alpha=0.3, static_topo=False, grad_accumulation_n=1, state_dict=None):
+    def __init__(self, model, optimizer, dense_allocation=1, T_end=None, sparsity_distribution='uniform', ignore_linear_layers=False, delta=100, alpha=0.3, static_topo=False, grad_accumulation_n=1, state_dict=None):
         if dense_allocation <= 0 or dense_allocation > 1:
             raise Exception('Dense allocation must be on the interval (0, 1]. Got: %f' % dense_allocation)
 
@@ -113,13 +114,18 @@ class RigLScheduler:
 
         self.W, self._linear_layers_mask = get_W(model, return_linear_layers_mask=True)
 
-        # modify optimizer.step() function to call "reset_momentum" after
-        _create_step_wrapper(self, optimizer)
+        # Explicit mask application in the training loop keeps score gradients dense.
 
         self.dense_allocation = dense_allocation
         self.N = [torch.numel(w) for w in self.W]
 
         if state_dict is not None:
+            # Current flat checkpoints omit these original constructor settings.
+            self.sparsity_distribution = sparsity_distribution
+            self.static_topo = static_topo
+            self.grad_accumulation_n = grad_accumulation_n
+            self.ignore_linear_layers = ignore_linear_layers
+            self.delta_T, self.alpha, self.T_end = delta, alpha, T_end
             self.load_state_dict(state_dict)
             self.apply_mask_to_weights()
 
@@ -158,7 +164,9 @@ class RigLScheduler:
             self.alpha = alpha
             self.T_end = T_end
 
-        # also, register backward hook so sparse elements cannot be recovered during normal training
+        self.changed_connections = getattr(self, "changed_connections", 0)
+
+        # Keep original score holders, without gradient-masking hooks.
         self.backward_hook_objects = []
         for i, w in enumerate(self.W):
             # if sparsity is 0%, skip
@@ -170,8 +178,7 @@ class RigLScheduler:
                 raise Exception('This model already has been registered to a RigLScheduler.')
 
             self.backward_hook_objects.append(IndexMaskHook(i, self))
-            w.register_hook(self.backward_hook_objects[-1])
-            setattr(w, '_has_rigl_backward_hook', True)
+            # Mask gradients only after computing dense drop/growth scores.
 
         assert self.grad_accumulation_n > 0 and self.grad_accumulation_n < delta
         assert self.sparsity_distribution in ('uniform', )
@@ -197,6 +204,7 @@ class RigLScheduler:
             'rigl_steps': self.rigl_steps,
             'backward_masks': self.backward_masks,
             '_linear_layers_mask': self._linear_layers_mask,
+            'changed_connections': self.changed_connections,
         }
 
         return obj
@@ -281,11 +289,10 @@ class RigLScheduler:
             if s <= 0:
                 continue
 
-            param_state = self.optimizer.state[w]
-            if 'momentum_buffer' in param_state:
-                # mask the momentum matrix
-                buf = param_state['momentum_buffer']
-                buf *= mask
+            for value in self.optimizer.state.get(w, {}).values():
+                if torch.is_tensor(value) and value.shape == w.shape:
+                    value.mul_(mask)
+
 
 
     @torch.no_grad()
@@ -304,7 +311,8 @@ class RigLScheduler:
             if s <= 0:
                 continue
 
-            w.grad *= mask
+            if w.grad is not None:
+                w.grad *= mask
     def check_if_backward_hook_should_accumulate_grad(self):
         """
         Used by the backward hooks. Basically just checks how far away the next rigl step is,
@@ -319,7 +327,7 @@ class RigLScheduler:
 
 
     def cosine_annealing(self):
-        return self.alpha / 2 * (1 + np.cos((self.step * np.pi) / self.T_end))
+        return self.alpha / 2 * (1 + math.cos((self.step * math.pi) / self.T_end))
 
 
     #def __call__(self):
@@ -357,13 +365,13 @@ class RigLScheduler:
                 for l, w in enumerate(self.W):
                     if self.backward_hook_objects[l] is not None:
                     # Use same fallback gradient for both drop and grow
-                      self.backward_hook_objects[l].dense_grad_drop = self.backward_hook_objects[l].dense_grad #w.grad
-                      self.backward_hook_objects[l].dense_grad_grow = self.backward_hook_objects[l].dense_grad #w.grad
+                      self.backward_hook_objects[l].dense_grad_drop = w.grad.detach().clone()
+                      self.backward_hook_objects[l].dense_grad_grow = w.grad.detach().clone()
                       #added because it is possible that this is the exact cause for 0 loss, apart from clipless
 
         self._rigl_step()
         self.rigl_steps += 1
-        return False
+        return True  # Adam and its LR schedule also advance on topology updates.
 
       return True
 
@@ -389,55 +397,46 @@ class RigLScheduler:
             score_drop = torch.abs(w * self.backward_hook_objects[l].dense_grad_drop)
             score_grow = torch.abs(self.backward_hook_objects[l].dense_grad_grow)
 
-            # calculate drop/grow quantities
-            n_total = self.N[l]
-            n_ones = torch.sum(current_mask).item()
-            n_prune = int(n_ones * drop_fraction)
-            n_keep = n_ones - n_prune
+            # Drop active edges; grow edges inactive BEFORE this update.
+            old_mask = current_mask.flatten().clone()
+            n_prune = min(int(int(old_mask.sum()) * drop_fraction),
+                          int((~old_mask).sum()))
+            if n_prune == 0:
+                continue
+            drop_scores = score_drop.flatten().masked_fill(~old_mask, float('inf'))
+            grow_scores = score_grow.flatten().masked_fill(old_mask, -float('inf'))
+            drop_indices = torch.topk(drop_scores, n_prune, largest=False).indices
+            grow_indices = torch.topk(grow_scores, n_prune).indices
+            new_mask = old_mask.clone()
+            new_mask[drop_indices] = False
+            new_mask[grow_indices] = True
+            w.flatten()[grow_indices] = 0
+            current_mask.copy_(new_mask.reshape_as(current_mask))
+            for value in self.optimizer.state.get(w, {}).values():
+                if torch.is_tensor(value) and value.shape == w.shape:
+                    value.flatten()[drop_indices] = 0
+                    value.flatten()[grow_indices] = 0
+            self.changed_connections += n_prune
 
-            # create drop mask
-            _, sorted_indices = torch.topk(score_drop.view(-1), k=n_total)
-            new_values = torch.where(
-                            torch.arange(n_total, device=w.device) < n_keep,
-                            torch.ones_like(sorted_indices),
-                            torch.zeros_like(sorted_indices))
-            mask1 = new_values.scatter(0, sorted_indices, new_values)
+        self.reset_momentum()
+        self.apply_mask_to_weights()
 
-            # flatten grow scores
-            score_grow = score_grow.view(-1)
+    def due(self):
+        return (not self.static_topo and (self.step + 1) % self.delta_T == 0
+                and self.step + 1 < self.T_end)
 
-            # set scores of the enabled connections(ones) to min(s) - 1, so that they have the lowest scores
-            score_grow_lifted = torch.where(
-                                mask1 == 1,
-                                torch.ones_like(mask1) * (torch.min(score_grow) - 1),
-                                score_grow)
+    @torch.no_grad()
+    def update(self, drop_grad, grow_grad):
+        # Bridge to the current training loop; use the original score holders.
+        for hook, drop, grow in zip(self.backward_hook_objects, drop_grad, grow_grad):
+            if hook is not None:
+                hook.dense_grad_drop = drop
+                hook.dense_grad_grow = grow
+        self._rigl_step()
+        self.rigl_steps += 1
 
-            # create grow mask
-            _, sorted_indices = torch.topk(score_grow_lifted, k=n_total)
-            new_values = torch.where(
-                            torch.arange(n_total, device=w.device) < n_prune,
-                            torch.ones_like(sorted_indices),
-                            torch.zeros_like(sorted_indices))
-            mask2 = new_values.scatter(0, sorted_indices, new_values)
 
-            mask2_reshaped = torch.reshape(mask2, current_mask.shape)
-            grow_tensor = torch.zeros_like(w)
-
-            REINIT_WHEN_SAME = False
-            if REINIT_WHEN_SAME:
-                raise NotImplementedError()
-            else:
-                new_connections = ((mask2_reshaped == 1) & (current_mask == 0))
-
-            # update new weights to be initialized as zeros and update the weight tensors
-            new_weights = torch.where(new_connections.to(w.device), grow_tensor, w)
-            w.data = new_weights
-
-            mask_combined = torch.reshape(mask1 + mask2, current_mask.shape).bool()
-
-            # update the mask
-            current_mask.data = mask_combined
-
-            self.reset_momentum()
-            self.apply_mask_to_weights()
-            self.apply_mask_to_gradients()
+def angle_coefficients(angle):
+    theta = float(angle) % 180.0
+    a, b = math.cos(math.radians(theta)), math.sin(math.radians(theta))
+    return (0. if abs(a) < 1e-12 else a, 0. if abs(b) < 1e-12 else b)

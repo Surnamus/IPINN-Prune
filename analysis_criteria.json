@@ -1,0 +1,38 @@
+{
+  "defined_on": "2026-10-07",
+  "status": "Exploratory criteria defined after training began and initial results were examined; not preregistered",
+  "nu_relative_error_pct_max": 7.2,
+  "compressed_file_saving_pct_min": 20.0,
+  "model1_relative_error_reduction_vs_model2_pct_min": 10.0,
+  "alpha": 0.05,
+  "confidence_level": 0.95,
+  "target_power": 0.8,
+  "independent_replication_unit": "seed",
+  "matching": [
+    "seed",
+    "sparsity"
+  ],
+  "criteria_application": "Apply the same accuracy and storage criteria to each run; summarize all seed passes jointly. Report every failed run and full continuous results, without excluding failures from inference.",
+  "all_seeds_pass_interpretation": "All observed seeds passed; this does not establish that all future seeds will pass.",
+  "accuracy_degradation_vs_dense": "No additional relative degradation margin; absolute nu error threshold applies",
+  "compression_verification": "Exact tensor reconstruction and identical tested predictions",
+  "storage_scope": "Final inference files including weights, biases, raw_nu, indices and metadata; optimizer and training data excluded. File storage savings do not imply GPU RAM savings.",
+  "angle_equivalence_margin": {
+    "error_ratio_lower": 0.9090909090909091,
+    "error_ratio_upper": 1.1,
+    "log10_ratio_lower": -0.04139268515822507,
+    "log10_ratio_upper": 0.04139268515822507
+  },
+  "angle_equivalence_status": "User-approved exploratory equivalence margin; inference must control planned multiple comparisons",
+  "target_power_status": "Planning target, not certified achieved power",
+  "storage_criterion_history": [
+    {
+      "threshold_pct": 30,
+      "status": "previous exploratory threshold"
+    },
+    {
+      "threshold_pct": 20,
+      "status": "user-requested revision after viewing results on 2026-10-07"
+    }
+  ]
+}

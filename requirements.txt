@@ -1,0 +1,6 @@
+# Install compatible PyTorch + torchvision ROCm builds separately.
+# ROCm environment used for experiments: torch 2.5.1+rocm6.2, torchvision 0.20.1+rocm6.2.
+numpy
+scipy
+pandas
+matplotlib
